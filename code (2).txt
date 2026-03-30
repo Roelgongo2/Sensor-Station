@@ -1,0 +1,102 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// --- Pin Definitions ---
+const int PIR_PIN = 2;       // Digital pin for PIR motion sensor
+const int TRIG_PIN = 3;      // Digital pin for Ultrasonic Trigger
+const int ECHO_PIN = 4;      // Digital pin for Ultrasonic Echo
+const int GAS_PIN = A0;      // Analog pin for MQ Gas sensor
+
+// Initialize the LCD with I2C address 0x27, 16 columns, 2 rows
+// Note: If your LCD does not display text, you may need to change 0x27 to 0x3F.
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Timing variables
+unsigned long lastUpdate = 0;
+const unsigned long updateInterval = 500; // Update display every 500ms
+
+void setup() {
+    // Initialize serial communication for debugging
+    Serial.begin(115200);
+
+    // Initialize LCD
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("Sensor Station");
+    lcd.setCursor(0, 1);
+    lcd.print("Initializing...");
+    delay(2000);
+    lcd.clear();
+
+    // Initialize Pins
+    pinMode(PIR_PIN, INPUT);
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    pinMode(GAS_PIN, INPUT);
+}
+
+// Function to get distance from HC-SR04
+long getDistance() {
+    // Clear the trigger pin
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    
+    // Set the trigger pin HIGH for 10 microseconds
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+
+    // Read the echo pin, timeout after 30ms (approx 5 meters)
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+    if (duration == 0) return -1; // Out of range or no echo
+
+    // Calculate the distance in centimeters
+    // Speed of sound is ~343 m/s or 0.0343 cm/us
+    // Distance = (duration * 0.0343) / 2
+    long distance = duration * 0.0343 / 2;
+    return distance;
+}
+
+void loop() {
+    if (millis() - lastUpdate >= updateInterval) {
+        lastUpdate = millis();
+
+        // Read sensors
+        bool motionDetected = digitalRead(PIR_PIN);
+        long distance = getDistance();
+        int gasLevel = analogRead(GAS_PIN);
+
+        // Debugging to Serial Monitor
+        Serial.print("Motion: "); Serial.print(motionDetected ? "YES" : "NO ");
+        Serial.print(" | Dist: "); 
+        if (distance != -1) {
+            Serial.print(distance); Serial.print(" cm");
+        } else {
+            Serial.print("OUT_OF_RANGE");
+        }
+        Serial.print(" | Gas: "); Serial.println(gasLevel);
+
+        // Update LCD
+        // Row 0: Distance and Motion
+        lcd.setCursor(0, 0);
+        lcd.print("D:");
+        if (distance != -1 && distance < 999) {
+            lcd.print(distance);
+            lcd.print("cm  "); // Padding to clear previous digits
+        } else {
+            lcd.print("---   ");
+        }
+
+        // Motion status at the end of the first line
+        lcd.setCursor(9, 0);
+        lcd.print(motionDetected ? "MOT:YES" : "MOT:NO ");
+
+        // Row 1: Gas level
+        lcd.setCursor(0, 1);
+        lcd.print("Gas Lvl: ");
+        lcd.print(gasLevel);
+        lcd.print("    "); // Padding to clear previous digits
+    }
+}
